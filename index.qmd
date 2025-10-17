@@ -1,0 +1,25 @@
+---
+title: "PROYECTO FINAL"
+author: "Diego Guanotasig"
+date: "10-17-25"
+format: html
+jupyter: python3
+---
+
+# TRABAJO FINAL
+
+```{python}
+import pandas as pd
+import requests
+
+
+```
+
+```{python}
+url = "https://raw.githubusercontent.com/erickedu85/dataset/master/story.txt"
+r = requests.get(url)
+r.encoding = 'utf-8'
+
+story = r.text
+story
+```

@@ -1,0 +1,36 @@
+project:
+  type: website
+  output-dir: docs  # Cambiar de _site a docs
+  resources: data/*.csv   # incluir todos los CSV dentro de la carpeta data/ 
+
+website:
+  title: "Machine Learning"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      #- href: 
+       # text: Practic2
+  
+  # sidebar:
+    # style: "docked"
+    # search: true
+    # contents:
+      #- text: "Welcome"
+       # href: index.qmd
+      #- section: "Introduction to ML"
+       # contents:
+        #  - mdg.qmd
+      #- section: "Natural Language Processing (NLP)"
+       # contents:
+        #  - bow.qmd
+         # - tex_classification.qmd
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true
+    fig-align: center
+    embed-resources: true
+ 
