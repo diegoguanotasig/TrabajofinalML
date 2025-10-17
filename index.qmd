@@ -7,19 +7,32 @@ jupyter: python3
 ---
 
 # TRABAJO FINAL
-
+### Librerias
 ```{python}
 import pandas as pd
 import requests
-
+import altair as alt
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.metrics import silhouette_score
 
 ```
+### Impotar datashet
 
 ```{python}
-url = "https://raw.githubusercontent.com/erickedu85/dataset/master/story.txt"
-r = requests.get(url)
-r.encoding = 'utf-8'
+url = "https://raw.githubusercontent.com/erickedu85/dataset/master/age_income.csv"
+df = pd.read_csv(url)
+df.head()
+```
 
-story = r.text
-story
+### Visualizar datos de entrada
+
+```{python}
+alt.Chart(df).mark_circle(size=20).encode(
+    alt.X('age'),
+    alt.Y('annual_income($)'),
+    tooltip=['age','annual_income($)']
+).interactive()
 ```
