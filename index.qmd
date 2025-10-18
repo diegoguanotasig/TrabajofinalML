@@ -812,6 +812,7 @@ plt.ylabel('Silhouette Score')
 plt.title('Silhouette Score para K-Means')
 plt.show()
 ```
+Como se puede observar an las dos gráficas el K=3 es la más óptima para el análisis
 
 ```{python}
 from sklearn.cluster import KMeans
@@ -861,8 +862,46 @@ Los clusters permiten explorar subgrupos naturales sin usar la etiqueta.
 
 #### •	Reflexionar sobre la calidad de los datos, la utilidad del target generado, el rendimiento de los modelos y los patrones encontrados.
 
+1. Calidad de los datos
 
+Variables numéricas: Se utilizaron variables como authorFollowers, time_response, account_age_days, mentions_count, hashtags_count, content_length, sentiment_polarity y toxicity_score. Es importante destacar que algunas de estas variables pueden contener valores atípicos o distribuciones sesgadas que podrían afectar el rendimiento del modelo. Por ejemplo, una alta cantidad de seguidores podría no correlacionarse directamente con la toxicidad del contenido.
+
+Variable objetivo (toxicity_score): Esta variable continua fue transformada en una variable categórica binaria (toxicity_label) utilizando un umbral de corte. Sin embargo, la elección del umbral puede ser subjetiva y afectar la precisión del modelo. Además, la distribución de la variable toxicity_score podría estar sesgada, lo que podría influir en la efectividad de la clasificación.
+
+2. Utilidad del target generado
+
+Clasificación binaria: La conversión de toxicity_score en una variable binaria facilita la interpretación y aplicación del modelo en escenarios prácticos, como la moderación de contenido en redes sociales. Sin embargo, esta simplificación puede llevar a la pérdida de matices importantes presentes en la escala continua original.
+
+3. Rendimiento de los modelos
+
+Modelos aplicados: Se implementaron modelos como Random Forest Regressor y K-Means para abordar el problema desde diferentes enfoques.
+
+Resultados obtenidos: Las métricas de evaluación, como MSE, RMSE, MAE y R², indicaron que el modelo de regresión no logró un rendimiento óptimo. Por ejemplo, un R² negativo sugiere que el modelo no es mejor que una simple media de la variable objetivo.
+
+Clustering: El análisis de clustering reveló patrones interesantes, aunque la relación con la variable objetivo toxicity_label no fue clara, lo que sugiere que los clusters podrían estar capturando otros aspectos del contenido de los tweets.
 
 #### 	•	Proponer mejoras o pasos futuros.
 
+1. Mejora en la calidad de los datos
 
+Manejo de valores atípicos: Implementar técnicas de detección y tratamiento de outliers en las variables numéricas para mejorar la calidad del modelo.
+
+Balanceo de clases: Si la variable toxicity_label está desbalanceada, aplicar técnicas como sobremuestreo (SMOTE) o submuestreo para equilibrar las clases y mejorar el rendimiento del modelo.
+
+2. Optimización de modelos
+
+Hiperparámetros: Realizar una búsqueda de hiperparámetros utilizando GridSearchCV o RandomizedSearchCV para encontrar la configuración óptima del modelo.
+
+Modelos avanzados: Explorar el uso de modelos más complejos como XGBoost, LightGBM o redes neuronales, que pueden manejar relaciones no lineales y grandes volúmenes de datos de manera más eficiente.
+
+3. Evaluación y validación
+
+Validación cruzada: Implementar técnicas de validación cruzada para obtener una estimación más robusta del rendimiento del modelo y evitar el sobreajuste.
+
+Métricas adicionales: Además de las métricas tradicionales, considerar el uso de métricas como el área bajo la curva ROC (AUC-ROC) y la matriz de confusión para evaluar mejor el rendimiento del modelo en tareas de clasificación.
+
+4. Análisis de clustering
+
+Interpretación de clusters: Realizar un análisis más profundo de los clusters obtenidos para entender qué características están agrupando los tweets y cómo se relacionan con la toxicidad del contenido.
+
+Modelos de clustering jerárquico: Explorar el uso de modelos de clustering jerárquico, como Agglomerative Clustering, para obtener una visión más detallada de la estructura de los datos.
