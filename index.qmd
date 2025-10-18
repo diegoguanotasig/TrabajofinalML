@@ -812,6 +812,7 @@ plt.ylabel('Silhouette Score')
 plt.title('Silhouette Score para K-Means')
 plt.show()
 ```
+
 ```{python}
 from sklearn.cluster import KMeans
 
