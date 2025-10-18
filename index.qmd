@@ -28,6 +28,9 @@ from nltk.stem import WordNetLemmatizer
 from nltk.corpus import wordnet
 import seaborn as sns
 import numpy as np
+
+#from wordcloud import WordCloud
+
 lemmatizer = WordNetLemmatizer()
 
 nltk.download('stopwords') # necessary for removal of stop words
@@ -99,7 +102,7 @@ print("Estadísticas descriptivas de las variables numéricas:\n")
 display(stats)
 
 # Distribución (histogramas)
-print("\n📈 Distribuciones de variables numéricas:")
+print("\n Distribuciones de variables numéricas:")
 num_df.hist(bins=20, figsize=(12, 8), edgecolor='black')
 plt.suptitle("Distribución de variables numéricas", fontsize=14)
 plt.tight_layout()
@@ -151,7 +154,7 @@ if 'toxicity_score' in df.columns:
     # Estadísticas complementarias
     skewness = df['toxicity_score'].skew()
     kurtosis = df['toxicity_score'].kurt()
-    print(f"📊 Estadísticas de distribución para 'toxicity_score':")
+    print(f"Estadísticas de distribución para 'toxicity_score':")
     print(f"Media: {df['toxicity_score'].mean():.4f}")
     print(f"Mediana: {df['toxicity_score'].median():.4f}")
     print(f"Desviación estándar: {df['toxicity_score'].std():.4f}")
@@ -160,7 +163,8 @@ if 'toxicity_score' in df.columns:
 else:
     print("La columna 'toxicity_score' no existe en el DataFrame.")
 ```
-### CONSLUSION DE LA ECALUACION DE TOXICITY
+
+### HALLAZGO 1 DE LA EVALUACION DE TOXICITY
 La variable toxicity_score muestra una distribución asimétrica positiva, concentrada en valores bajos (mensajes poco tóxicos) y con algunos valores extremos hacia el lado alto, representando pocos mensajes muy tóxicos.
 En general, la toxicidad promedio del conjunto de datos es baja y los valores se encuentran bastante dispersos, sin una concentración muy marcada alrededor de la media.
 
@@ -168,20 +172,20 @@ En general, la toxicidad promedio del conjunto de datos es baja y los valores se
 
 
 ```{python}
-print("🔎 DETECCIÓN DE DATOS PROBLEMÁTICOS\n")
+print("DETECCIÓN DE DATOS PROBLEMÁTICOS\n")
 
 # 1 VALORES NULOS
 nulos = df.isnull().sum()
 nulos = nulos[nulos > 0]
 if not nulos.empty:
-    print("📉 Columnas con valores nulos:\n")
+    print("Columnas con valores nulos:\n")
     display(nulos.to_frame("Cantidad de nulos"))
 else:
-    print("✅ No hay valores nulos en el DataFrame.\n")
+    print(" No hay valores nulos en el DataFrame.\n")
 
 # 2 VALORES DUPLICADOS
 duplicados = df.duplicated().sum()
-print(f"📋 Registros duplicados: {duplicados}\n")
+print(f"Registros duplicados: {duplicados}\n")
 
 # 3 DETECCIÓN DE VALORES ATÍPICOS (OUTLIERS)
 num_df = df.select_dtypes(include=['number'])
@@ -211,3 +215,101 @@ if not num_df.empty:
     plt.tight_layout()
     plt.show()
 ```
+
+### HALLAZGO 2 OUTLIERS
+
+authorId: no debe analizarse como variable numérica continua → solo sirve como identificador.
+
+authorFollowers: presenta outliers reales (usuarios con muchos seguidores).
+No son errores, pero sí valores extremadamente altos que podrían distorsionar análisis estadísticos (por ejemplo, al calcular promedios).
+
+### VISUALIZACIONES ADICIONALES
+
+#### Gráficos de barras o conteo para variables categóricas.
+
+
+```{python}
+# 1 GRÁFICOS DE BARRAS / CONTEO (variables categóricas)
+
+cat_cols = df.select_dtypes(include=['object', 'category']).columns
+
+if len(cat_cols) > 0:
+    for col in cat_cols[:3]:  # graficar hasta 3 variables categóricas
+        # Contar categorías y tomar solo las 10 principales
+        top_cats = df[col].value_counts().head(10)
+
+        plt.figure(figsize=(8, 4))
+        sns.barplot(y=top_cats.index, x=top_cats.values, palette='viridis')
+        plt.title(f"Top 10 categorías más frecuentes en: {col}")
+        plt.xlabel("Frecuencia")
+        plt.ylabel(col)
+        plt.tight_layout()
+        plt.show()
+else:
+    print("No se encontraron variables categóricas para graficar.\n")
+```
+
+### HALLAZGO 3 FRECUENCIA DE LAS CATEGORICAS
+
+Se realizó el análisis de las 3 variables categóricas donde vimos la frecuencia de URL, el contenido y la los replicados, teniendo un contexto para analizar segun la frecuencia de estas categóricas
+
+#### Nube de texto
+
+```{python}
+
+from wordcloud import WordCloud
+from collections import Counter
+
+# Detectar la posible variable de texto
+text_cols = [col for col in df.columns if df[col].dtype == 'object' and df[col].str.len().mean() > 30]
+
+if len(text_cols) > 0:
+    col_texto = text_cols[1]  # usa la segunda columna tipo texto
+    texto = " ".join(df[col_texto].dropna().astype(str))
+
+    # --- Generar nube de palabras ---
+    plt.figure(figsize=(10,6))
+    wc = WordCloud(width=800, height=400, background_color='white', colormap='viridis', max_words=100).generate(texto)
+    plt.imshow(wc, interpolation='bilinear')
+    plt.axis("off")
+    plt.title(f"Nube de palabras - {col_texto}")
+    plt.show()
+
+    # --- Calcular las 10 palabras más frecuentes ---
+    palabras = texto.split()
+    frec = Counter(palabras)
+    comunes = pd.DataFrame(frec.most_common(10), columns=['Palabra', 'Frecuencia'])
+
+    # --- Gráfico Top 10 ---
+    plt.figure(figsize=(8,4))
+    sns.barplot(data=comunes, x='Frecuencia', y='Palabra', palette='mako')
+    plt.title(f"Top 10 palabras más representativas - {col_texto}")
+    plt.tight_layout()
+    plt.show()
+
+    # --- Mostrar tabla ---
+    display(comunes)
+else:
+    print("No se detectó ninguna columna de texto para generar la nube de palabras.\n")
+```
+
+# 2. Preprocesamiento y codificación:
+
+### * Limpieza del texto y metadatos.
+
+```{python}
+
+```
+
+### Aplicación de técnicas como:
+
+		•	Codificación de texto (TF-IDF, CountVectorizer, u otros).
+
+		•	Codificación de variables categóricas (OneHotEncoder, OrdinalEncoder).
+
+		•	Escalamiento de variables numéricas (MinMaxScaler, StandardScaler).
+
+```{python}
+
+```
+
