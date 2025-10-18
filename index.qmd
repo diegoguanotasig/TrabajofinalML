@@ -13,11 +13,11 @@ import pandas as pd
 import requests
 import altair as alt
 from sklearn.cluster import KMeans
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import OneHotEncoder, OrdinalEncoder, StandardScaler, MinMaxScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import silhouette_score
-from sklearn.feature_extraction.text import TfidfVectorizer #tfidf
+from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer
 import matplotlib.pyplot as plt
 import pandas as pd
 import nltk
@@ -298,18 +298,570 @@ else:
 ### * Limpieza del texto y metadatos.
 
 ```{python}
+import re
 
+# Inicializar lematizador y stopwords
+lemmatizer = WordNetLemmatizer()
+stop_words = set(stopwords.words('spanish'))  # Español, cambiar si es otro idioma
+
+def clean_text(text):
+    if not isinstance(text, str):
+        return ""
+    
+    # Eliminar URLs
+    text = re.sub(r'http\S+|www\S+|https\S+', '', text, flags=re.MULTILINE)
+    
+    # Eliminar menciones (@usuario)
+    text = re.sub(r'@\w+', '', text)
+    
+    # Eliminar hashtags pero mantener la palabra
+    text = re.sub(r'#', '', text)
+    
+    # Eliminar caracteres especiales y números (opcional)
+    text = re.sub(r'[^A-Za-záéíóúüñÁÉÍÓÚÜÑ ]+', '', text)
+    
+    # Convertir a minúsculas
+    text = text.lower()
+    
+    # Tokenizar, eliminar stopwords y lematizar
+    tokens = text.split()
+    tokens = [lemmatizer.lemmatize(t) for t in tokens if t not in stop_words]
+    
+    # Reconstruir el texto limpio
+    return ' '.join(tokens)
+
+# Aplicar limpieza
+df['clean_content'] = df['content'].apply(clean_text)
+
+# Crear nuevas columnas opcionales
+df['clean_content_length'] = df['clean_content'].apply(len)
+df['clean_word_count'] = df['clean_content'].apply(lambda x: len(x.split()))
+
+# Ver ejemplo
+print(df[['content', 'clean_content', 'clean_content_length', 'clean_word_count']].head())
 ```
 
 ### Aplicación de técnicas como:
 
-		•	Codificación de texto (TF-IDF, CountVectorizer, u otros).
+#### •	Codificación de texto (TF-IDF, CountVectorizer, u otros).
+Se utilizó TF-IDF porque asigna un peso a cada palabra según su frecuencia en el tweet y en todo el corpus.
 
-		•	Codificación de variables categóricas (OneHotEncoder, OrdinalEncoder).
+Las palabras comunes en todos los tweets tienen menor peso.
+```{python}
+# --- 1. TF-IDF ---
+stop_words = stopwords.words("spanish")
+tfidf_vectorizer = TfidfVectorizer(
+    max_features=1000,   # Número máximo de palabras a considerar
+    ngram_range=(1,2),   # Unigrama y bigrama
+    stop_words=stop_words # Stopwords en español
+)
 
-		•	Escalamiento de variables numéricas (MinMaxScaler, StandardScaler).
+X_tfidf = tfidf_vectorizer.fit_transform(df['clean_content'])
+
+# Convertir a DataFrame opcionalmente
+X_tfidf_df = pd.DataFrame(X_tfidf.toarray(), columns=tfidf_vectorizer.get_feature_names_out())
+
+print("TF-IDF shape:", X_tfidf_df.shape)
+print(X_tfidf_df.head())
+```
+
+#### Codificación de variables categóricas (OneHotEncoder, OrdinalEncoder).
+```{python}
+categorical_cols = ['authorVerified', 'isReply']  # columnas categóricas simples
+ordinal_cols = ['authorUsername']  # ejemplo de columnas con muchas categorías
+
+# --- 1. OneHotEncoder para variables con pocas categorías ---
+ohe = OneHotEncoder(sparse_output=False, handle_unknown='ignore')
+X_cat_ohe = ohe.fit_transform(df[categorical_cols])
+X_cat_ohe_df = pd.DataFrame(X_cat_ohe, columns=ohe.get_feature_names_out(categorical_cols))
+
+print("OneHotEncoder shape:", X_cat_ohe_df.shape)
+print(X_cat_ohe_df.head())
+
+# --- 2. OrdinalEncoder para variables con muchas categorías ---
+ord_enc = OrdinalEncoder()
+X_cat_ord = ord_enc.fit_transform(df[ordinal_cols])
+X_cat_ord_df = pd.DataFrame(X_cat_ord, columns=ordinal_cols)
+
+print("OrdinalEncoder shape:", X_cat_ord_df.shape)
+print(X_cat_ord_df.head())
+```
+
+#### •	Escalamiento de variables numéricas (MinMaxScaler, StandardScaler).
+
+No tiene mucho sentido escalar IDs (tweetId, authorId, conversationId, inReplyToId), porque son solo identificadores y no representan magnitudes numéricas útiles para modelado.
+
+Para un pipeline simple, usaremos StandardScaler
 
 ```{python}
+numerical_cols = ['authorFollowers', 'time_response', 'account_age_days', 
+ 'mentions_count', 'hashtags_count', 'content_length', 
+ 'sentiment_polarity', 'toxicity_score']
+
+scaler = StandardScaler()
+df_scaled = df.copy()
+df_scaled[numerical_cols] = scaler.fit_transform(df[numerical_cols])
+
+print(df_scaled[numerical_cols].head())
+```
+
+# 3. CLASIFICACIÓN
+#### • Transformar el valor de TOXICITY en una variable categórica binaria o multiclase, utilizando un umbral de corte o una estrategia de discretización, debidamente justificada.
+
+```{python}
+import matplotlib.pyplot as plt
+
+plt.hist(df['toxicity_score'], bins=50, color='skyblue', edgecolor='black')
+plt.xlabel('Toxicity Score')
+plt.ylabel('Frecuencia')
+plt.title('Distribución de Toxicity Score')
+plt.show()
+
+# Revisar valores mínimo y máximo
+print(df['toxicity_score'].min(), df['toxicity_score'].max())
+```
+
+```{python}
+# Crear variable binaria
+df['toxicity_label'] = df['toxicity_score'].apply(lambda x: 1 if x >= 0.5 else 0)
+
+# Revisar distribución
+print(df['toxicity_label'].value_counts())
+```
+
+#### •	Seleccionar y aplicar al menos un algoritmo de clasificación supervisada.
+
+Usaré Logistic Regression como algoritmo, ya que es simple, interpretable y funciona bien para clasificación binaria.
+
+```{python}
+from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
+
+# Columnas numéricas útiles
+numerical_cols = ['authorFollowers', 'time_response', 'account_age_days',
+                  'mentions_count', 'hashtags_count', 'content_length',
+                  'sentiment_polarity']
+
+# Separar variables predictoras y target
+X = df[numerical_cols + ['content']]
+y = df['toxicity_label']
+
+# Dividir en entrenamiento y prueba
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+```
+
+```{python}
+from sklearn.preprocessing import FunctionTransformer
+from sklearn.pipeline import FeatureUnion
+
+# Transformador para seleccionar columnas numéricas o de texto
+def get_numeric_data(X):
+    return X[numerical_cols]
+
+def get_text_data(X):
+    return X['content']
+
+numeric_transformer = Pipeline([
+    ('selector', FunctionTransformer(get_numeric_data, validate=False)),
+    ('scaler', StandardScaler())
+])
+
+text_transformer = Pipeline([
+    ('selector', FunctionTransformer(get_text_data, validate=False)),
+    ('tfidf', TfidfVectorizer(max_features=1000, stop_words=stop_words))
+])
+
+# Combinar ambos
+preprocessor = FeatureUnion([
+    ('num', numeric_transformer),
+    ('text', text_transformer)
+])
+
+# Pipeline completo
+model_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('classifier', LogisticRegression(max_iter=1000))
+])
+
+# Entrenar modelo
+model_pipeline.fit(X_train, y_train)
+```
+
+####	•	Evaluar el rendimiento del modelo utilizando métricas apropiadas (por ejemplo: Accuracy, Precision, Recall, F1-Score, ROC-AUC).
+
+```{python}
+# Predecir
+y_pred = model_pipeline.predict(X_test)
+
+# Reporte de clasificación
+print(classification_report(y_test, y_pred))
+
+# Matriz de confusión
+print(confusion_matrix(y_test, y_pred))
+```
+
+```{python}
+from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, roc_auc_score, confusion_matrix
+
+# Predicciones de clases
+y_pred = model_pipeline.predict(X_test)
+
+# Probabilidades para ROC-AUC
+y_prob = model_pipeline.predict_proba(X_test)[:, 1]
+```
+
+```{python}
+accuracy = accuracy_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+recall = recall_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+roc_auc = roc_auc_score(y_test, y_prob)
+
+print(f"Accuracy : {accuracy:.4f}")
+print(f"Precision: {precision:.4f}")
+print(f"Recall   : {recall:.4f}")
+print(f"F1-Score : {f1:.4f}")
+print(f"ROC-AUC  : {roc_auc:.4f}")
+```
+
+#### •	Presentar los resultados mediante visualizaciones relevantes (matriz de confusión, curva ROC, etc.).
+
+```{python}
+cm = confusion_matrix(y_test, y_pred)
+sns.heatmap(cm, annot=True, fmt='d', cmap='Blues')
+plt.xlabel('Predicted')
+plt.ylabel('Actual')
+plt.title('Confusion Matrix')
+plt.show()
+```
+# 4. REGRESION
+#### Utilizar el valor continuo de TOXICITY como variable objetivo para un problema de regresión.
+## Regresión lineal
+
+Se tienen valores Nan en TOXICY_SCORE por lo que se van eliminar
+```{python}
+print("VALORES NAN EN TOXICY SCORE")
+print(df['toxicity_label'].isna().sum())
+print(df['toxicity_score'].isna().sum())  # si usas regresión
+```
+
+```{python}
+df_clean = df.dropna(subset=['toxicity_label'])
+```
+
+```{python}
+df_clean = df.dropna(subset=['toxicity_label'])
+Xr = df_clean[numerical_cols + ['content']]
+yr = df_clean['toxicity_label']
+```
+
+```{python}
+print(Xr.isna().sum())
+print(yr.isna().sum())
+```
+
+
+	•	Seleccionar y aplicar al menos un algoritmo de regresión supervisada.
+
+	•	Evaluar el rendimiento del modelo utilizando métricas adecuadas (por ejemplo: MAE, RMSE, R²).
+
+	•	Visualizar los resultados con gráficos interpretables (dispersión real vs predicho, errores residuales, etc.).
+
+```{python}
+# División de datos
+X_train, X_test, y_train, y_test = train_test_split(Xr, yr, test_size=0.2, random_state=42)
+```
+
+```{python}
+from sklearn.pipeline import Pipeline, FeatureUnion
+from sklearn.preprocessing import StandardScaler, FunctionTransformer
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.linear_model import LinearRegression
+
+# Funciones para seleccionar columnas
+def get_numeric_data(X):
+    return X[numerical_cols]
+
+def get_text_data(X):
+    return X['content']
+
+# Pipeline para variables numéricas
+numeric_transformer = Pipeline([
+    ('selector', FunctionTransformer(get_numeric_data, validate=False)),
+    ('scaler', StandardScaler())
+])
+
+# Pipeline para texto
+text_transformer = Pipeline([
+    ('selector', FunctionTransformer(get_text_data, validate=False)),
+    ('tfidf', TfidfVectorizer(max_features=1000, stop_words=stop_words))
+])
+
+# Combinar ambos
+preprocessor = FeatureUnion([
+    ('num', numeric_transformer),
+    ('text', text_transformer)
+])
+
+# Pipeline completo con regresión lineal
+reg_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('regressor', LinearRegression())
+])
+
+# Entrenar modelo
+reg_pipeline.fit(X_train, y_train)
 
 ```
+
+```{python}
+from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import numpy as np
+
+# Predecir
+y_pred = reg_pipeline.predict(X_test)
+
+# Métricas
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+mae = mean_absolute_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print(f"MSE  : {mse:.4f}")
+print(f"RMSE : {rmse:.4f}")
+print(f"MAE  : {mae:.4f}")
+print(f"R2   : {r2:.4f}")
+
+```
+
+```{python}
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+plt.figure(figsize=(6,6))
+sns.scatterplot(x=y_test, y=y_pred, alpha=0.5)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+plt.xlabel("Valor real")
+plt.ylabel("Predicción")
+plt.title("Real vs Predicho")
+plt.show()
+```
+### CONCLUSION 
+MSE = 5.338 → los errores al cuadrado son bastante grandes, indica que el modelo no está ajustando bien.
+RMSE = 2.31 → en promedio, las predicciones se desvían ±2.31 del valor real de toxicity_score.
+MAE = 1.45 → en promedio, predicción se desvía ±1.45 del valor real.
+
+Dado quer R² negativo, se probará RandomForestRegressor, que manejan mejor relaciones no lineales y datos sesgados, especialmente con features de texto y métricas de tweets.
+
+## RANDON FOREST
+
+```{python}
+from sklearn.ensemble import RandomForestRegressor
+
+# Columnas numéricas útiles
+numerical_cols2 = ['authorFollowers', 'time_response', 'account_age_days',
+                  'mentions_count', 'hashtags_count', 'content_length',
+                  'sentiment_polarity']
+
+# Limpiar filas con NaN en toxicity_score
+df_clean1 = df.dropna(subset=['toxicity_score'])
+
+# Variables predictoras y target
+Xr1 = df_clean1[numerical_cols2 + ['content']]
+yr1 = df_clean1['toxicity_score']
+
+# Dividir en entrenamiento y prueba
+X_train, X_test, y_train, y_test = train_test_split(Xr1, yr1, test_size=0.2, random_state=42)
+```
+
+```{python}
+# Funciones para seleccionar columnas
+def get_numeric_data(X):
+    return X[numerical_cols]
+
+def get_text_data(X):
+    return X['content']
+
+# Pipeline para variables numéricas
+numeric_transformer = Pipeline([
+    ('selector', FunctionTransformer(get_numeric_data, validate=False)),
+    ('scaler', StandardScaler())
+])
+
+# Pipeline para texto
+text_transformer = Pipeline([
+    ('selector', FunctionTransformer(get_text_data, validate=False)),
+    ('tfidf', TfidfVectorizer(max_features=1000, stop_words=stop_words))
+])
+
+# Combinar ambos
+preprocessor = FeatureUnion([
+    ('num', numeric_transformer),
+    ('text', text_transformer)
+])
+```
+
+```{python}
+reg_pipeline = Pipeline([
+    ('preprocessor', preprocessor),
+    ('regressor', RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1))
+])
+
+# Entrenar modelo
+reg_pipeline.fit(X_train, y_train)
+```
+
+```{python}
+# Predecir
+y_pred = reg_pipeline.predict(X_test)
+
+# Métricas
+mse = mean_squared_error(y_test, y_pred)
+rmse = np.sqrt(mse)
+mae = mean_absolute_error(y_test, y_pred)
+r2 = r2_score(y_test, y_pred)
+
+print(f"MSE  : {mse:.4f}")
+print(f"RMSE : {rmse:.4f}")
+print(f"MAE  : {mae:.4f}")
+print(f"R2   : {r2:.4f}")
+```
+
+```{python}
+plt.figure(figsize=(6,6))
+sns.scatterplot(x=y_test, y=y_pred, alpha=0.5)
+plt.plot([y_test.min(), y_test.max()], [y_test.min(), y_test.max()], 'r--')
+plt.xlabel("Valor real")
+plt.ylabel("Predicción")
+plt.title("Random Forest: Real vs Predicho")
+plt.show()
+```
+### CONCLUSIÓN
+R² = 0.31:
+Esto es bajo. Solo el ~31% de la variabilidad de los datos es explicada por Random Forest. Esto indica que, aunque los errores no son enormes, el modelo no captura bien las relaciones entre variables. Existe mucho ruido o falten variables
+
+# 5 CLUSTERIZACIÓN
+
+
+```{python}
+import pandas as pd
+import numpy as np
+from sklearn.preprocessing import StandardScaler
+from sklearn.feature_extraction.text import TfidfVectorizer
+
+# Columnas numéricas útiles
+numerical_cols = ['authorFollowers', 'time_response', 'account_age_days',
+                  'mentions_count', 'hashtags_count', 'content_length',
+                  'sentiment_polarity']
+
+# Limpiar NaN si existen
+df_clean = df.dropna(subset=numerical_cols + ['content', 'toxicity_label'])
+
+# Escalar variables numéricas
+scaler = StandardScaler()
+X_num_scaled = scaler.fit_transform(df_clean[numerical_cols])
+
+# Transformar texto con TF-IDF
+tfidf = TfidfVectorizer(max_features=500, stop_words=stop_words)
+X_text = tfidf.fit_transform(df_clean['content']).toarray()
+
+# Combinar numéricas + texto
+X_clustering = np.hstack([X_num_scaled, X_text])
+```
+#### METODO DEL CODO
+```{python}
+import matplotlib.pyplot as plt
+from sklearn.cluster import KMeans
+
+inertia = []
+K_range = range(1, 11)  # Probar de 1 a 10 clusters
+
+for k in K_range:
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    kmeans.fit(X_clustering)
+    inertia.append(kmeans.inertia_)
+
+# Graficar
+plt.figure(figsize=(6,4))
+plt.plot(K_range, inertia, 'o-', color='blue')
+plt.xlabel('Número de clusters K')
+plt.ylabel('Inertia (Suma de distancias cuadradas)')
+plt.title('Método del Codo para K-Means')
+plt.show()
+```
+
+#### METODO SILHOUTTE SCORE
+
+```{python}
+from sklearn.metrics import silhouette_score
+
+sil_scores = []
+
+for k in range(2, 11):  # silhouette no funciona con K=1
+    kmeans = KMeans(n_clusters=k, random_state=42)
+    labels = kmeans.fit_predict(X_clustering)
+    sil = silhouette_score(X_clustering, labels)
+    sil_scores.append(sil)
+
+# Graficar
+plt.figure(figsize=(6,4))
+plt.plot(range(2,11), sil_scores, 'o-', color='green')
+plt.xlabel('Número de clusters K')
+plt.ylabel('Silhouette Score')
+plt.title('Silhouette Score para K-Means')
+plt.show()
+```
+```{python}
+from sklearn.cluster import KMeans
+
+# Definir número de clusters
+k = 3  # Ajustable según exploración
+kmeans = KMeans(n_clusters=k, random_state=42)
+clusters = kmeans.fit_predict(X_clustering)
+
+# Añadir clusters al DataFrame
+df_clean['cluster'] = clusters
+```
+
+
+```{python}
+from sklearn.decomposition import PCA
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+# Reducir a 2 dimensiones
+pca = PCA(n_components=2, random_state=42)
+X_pca = pca.fit_transform(X_clustering)
+
+df_clean['pca1'] = X_pca[:, 0]
+df_clean['pca2'] = X_pca[:, 1]
+
+# Graficar clusters
+plt.figure(figsize=(8,6))
+sns.scatterplot(data=df_clean, x='pca1', y='pca2', hue='cluster', palette='Set1')
+plt.title('Clusters de tweets (PCA 2D)')
+plt.show()
+```
+
+```{python}
+# Tabla de contingencia
+comparison = pd.crosstab(df_clean['cluster'], df_clean['toxicity_label'])
+print(comparison)
+```
+#### Reflexión
+Si un cluster tiene mayoría de toxicity_label=1, probablemente captura tweets más tóxicos.
+
+Si los clusters están mezclados, el clustering detecta patrones distintos a la toxicidad (estructura del texto, número de seguidores, hashtags).
+
+Los clusters permiten explorar subgrupos naturales sin usar la etiqueta.
+
+# 6 CONCLUSIONES
+
+#### •	Reflexionar sobre la calidad de los datos, la utilidad del target generado, el rendimiento de los modelos y los patrones encontrados.
+
+
+
+#### 	•	Proponer mejoras o pasos futuros.
+
 
