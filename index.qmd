@@ -17,22 +17,197 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.metrics import silhouette_score
+from sklearn.feature_extraction.text import TfidfVectorizer #tfidf
+import matplotlib.pyplot as plt
+import pandas as pd
+import nltk
+from nltk.corpus import stopwords
+from nltk import word_tokenize # tokenizacion
+from nltk import pos_tag #lematizacion
+from nltk.stem import WordNetLemmatizer
+from nltk.corpus import wordnet
+import seaborn as sns
+import numpy as np
+lemmatizer = WordNetLemmatizer()
 
+nltk.download('stopwords') # necessary for removal of stop words
+nltk.download('wordnet') # necessary for lemmatization
 ```
 ### Impotar datashet
 
 ```{python}
-url = "https://raw.githubusercontent.com/erickedu85/dataset/master/age_income.csv"
-df = pd.read_csv(url)
+
+# Lee el CSV que está en la misma carpeta
+df = pd.read_csv("data/1500_tweets_con_toxicity.csv")
+#sep=';',
+#        encoding='latin-1')
+# Muestra las primeras filas
 df.head()
+
 ```
 
-### Visualizar datos de entrada
+```{python}
+df.info()
+```
+
+# 1. Análisis Exploratorio de Datos (EDA):
+
+### •	Analizar el dataset entregado con foco en:
+#### Tipo y cantidad de variables (numéricas, categóricas, texto).
+
+Variables numéricas (int, float).
+
+Variables categóricas (object, category).
+
+Variables de texto, estimadas como columnas de tipo object con longitud promedio de texto > 30 caracteres.
 
 ```{python}
-alt.Chart(df).mark_circle(size=20).encode(
-    alt.X('age'),
-    alt.Y('annual_income($)'),
-    tooltip=['age','annual_income($)']
-).interactive()
+# Detectar tipos de columnas
+num_vars = df.select_dtypes(include=['number']).columns
+cat_vars = df.select_dtypes(include=['object', 'category']).columns
+text_vars = [col for col in df.columns if df[col].dtype == 'object' and df[col].str.len().mean() > 30]
+
+# Mostrar resultados
+print("Tipos de variables en el DataFrame:\n")
+print(f"Variables numéricas ({len(num_vars)}): {list(num_vars)}")
+print(f"Variables categóricas ({len(cat_vars)}): {list(cat_vars)}")
+print(f"Variables de texto ({len(text_vars)}): {list(text_vars)}")
+
+# Si quieres un resumen tabular:
+resumen = pd.DataFrame({
+    'Tipo': ['Numéricas', 'Categóricas', 'Texto'],
+    'Cantidad': [len(num_vars), len(cat_vars), len(text_vars)]
+})
+
+display(resumen)
+
+```
+
+### * Estadísticas descriptivas (mínimos, máximos, media, mediana, distribución).
+
+
+```{python}
+# variables numéricas
+num_df = df.select_dtypes(include=['number'])
+
+# Estadísticas básicas
+stats = num_df.describe().T
+stats['median'] = num_df.median()
+stats = stats[['min', 'max', 'mean', 'median', 'std']]
+
+print("Estadísticas descriptivas de las variables numéricas:\n")
+display(stats)
+
+# Distribución (histogramas)
+print("\n📈 Distribuciones de variables numéricas:")
+num_df.hist(bins=20, figsize=(12, 8), edgecolor='black')
+plt.suptitle("Distribución de variables numéricas", fontsize=14)
+plt.tight_layout()
+plt.show()
+```
+
+### Distribución de la variable TOXICITY.
+Histograma + KDE → muestra la forma de la distribución.
+
+Si la curva está cargada hacia la izquierda o derecha → distribución sesgada.
+
+Si es más o menos simétrica → normal o casi normal.
+
+Boxplot → ayuda a detectar valores atípicos (outliers).
+
+Sesgo (skewness):
+
+0 → sesgo a la derecha (muchos valores bajos, pocos altos).
+
+< 0 → sesgo a la izquierda (muchos valores altos, pocos bajos).
+
+Curtosis:
+
+0 → más concentrada (pico más alto).
+
+< 0 → más aplanada.
+
+```{python}
+# --- Verificamos que la variable exista ---
+if 'toxicity_score' in df.columns:
+    plt.figure(figsize=(12,5))
+
+    # Histograma + KDE (curva de densidad)
+    plt.subplot(1,2,1)
+    sns.histplot(df['toxicity_score'], bins=30, kde=True, color='steelblue')
+    plt.title('Distribución de toxicity_score')
+    plt.xlabel('toxicity_score')
+    plt.ylabel('Frecuencia')
+
+    # Boxplot (para detectar outliers)
+    plt.subplot(1,2,2)
+    sns.boxplot(x=df['toxicity_score'], color='salmon')
+    plt.title('Boxplot de toxicity_score')
+    plt.xlabel('toxicity_score')
+
+    plt.tight_layout()
+    plt.show()
+
+    # Estadísticas complementarias
+    skewness = df['toxicity_score'].skew()
+    kurtosis = df['toxicity_score'].kurt()
+    print(f"📊 Estadísticas de distribución para 'toxicity_score':")
+    print(f"Media: {df['toxicity_score'].mean():.4f}")
+    print(f"Mediana: {df['toxicity_score'].median():.4f}")
+    print(f"Desviación estándar: {df['toxicity_score'].std():.4f}")
+    print(f"Sesgo (skewness): {skewness:.4f}")
+    print(f"Curtosis: {kurtosis:.4f}")
+else:
+    print("La columna 'toxicity_score' no existe en el DataFrame.")
+```
+### CONSLUSION DE LA ECALUACION DE TOXICITY
+La variable toxicity_score muestra una distribución asimétrica positiva, concentrada en valores bajos (mensajes poco tóxicos) y con algunos valores extremos hacia el lado alto, representando pocos mensajes muy tóxicos.
+En general, la toxicidad promedio del conjunto de datos es baja y los valores se encuentran bastante dispersos, sin una concentración muy marcada alrededor de la media.
+
+### Detección de valores nulos, duplicados o atípicos.
+
+
+```{python}
+print("🔎 DETECCIÓN DE DATOS PROBLEMÁTICOS\n")
+
+# 1 VALORES NULOS
+nulos = df.isnull().sum()
+nulos = nulos[nulos > 0]
+if not nulos.empty:
+    print("📉 Columnas con valores nulos:\n")
+    display(nulos.to_frame("Cantidad de nulos"))
+else:
+    print("✅ No hay valores nulos en el DataFrame.\n")
+
+# 2 VALORES DUPLICADOS
+duplicados = df.duplicated().sum()
+print(f"📋 Registros duplicados: {duplicados}\n")
+
+# 3 DETECCIÓN DE VALORES ATÍPICOS (OUTLIERS)
+num_df = df.select_dtypes(include=['number'])
+
+outliers = {}
+for col in num_df.columns:
+    Q1 = num_df[col].quantile(0.25)
+    Q3 = num_df[col].quantile(0.75)
+    IQR = Q3 - Q1
+    limite_inf = Q1 - 1.5 * IQR
+    limite_sup = Q3 + 1.5 * IQR
+    cantidad_outliers = ((num_df[col] < limite_inf) | (num_df[col] > limite_sup)).sum()
+    if cantidad_outliers > 0:
+        outliers[col] = cantidad_outliers
+
+if outliers:
+    print("Columnas con valores atípicos detectados:\n")
+    display(pd.DataFrame.from_dict(outliers, orient='index', columns=['Cantidad de outliers']))
+else:
+    print(" No se detectaron valores atípicos en las variables numéricas.\n")
+
+# 4 VISUALIZACIÓN DE OUTLIERS (Boxplots)
+if not num_df.empty:
+    num_cols = num_df.columns[:5]  # muestra hasta 5 variables numéricas
+    num_df[num_cols].plot(kind='box', subplots=True, layout=(1, len(num_cols)), figsize=(15, 4), sharey=False)
+    plt.suptitle("Boxplots de variables numéricas (detección de outliers)", fontsize=14)
+    plt.tight_layout()
+    plt.show()
 ```
