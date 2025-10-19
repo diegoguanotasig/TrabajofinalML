@@ -812,13 +812,13 @@ plt.ylabel('Silhouette Score')
 plt.title('Silhouette Score para K-Means')
 plt.show()
 ```
-Como se puede observar an las dos gráficas el K=3 es la más óptima para el análisis
+Como se puede observar an las dos gráficas el K=2 es la más óptima para el análisis
 
 ```{python}
 from sklearn.cluster import KMeans
 
 # Definir número de clusters
-k = 3  # Ajustable según exploración
+k = 2  # Ajustable según exploración
 kmeans = KMeans(n_clusters=k, random_state=42)
 clusters = kmeans.fit_predict(X_clustering)
 
